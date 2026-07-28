@@ -4,5 +4,8 @@ __pycache__/
 *.egg-info/
 .venv/
 
+# esbuild is fetched on demand by tools/build_viewer.py; nothing
+# else in the project needs npm, so its files stay untracked.
 node_modules/
+package.json
 package-lock.json
