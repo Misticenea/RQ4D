@@ -1,0 +1,171 @@
+# Risks and platform constraints
+
+Ordered by how likely they are to change the plan.
+
+---
+
+## R-01 — Depth API characteristics are unmeasured
+
+**Impact:** high · **Likelihood:** certain
+
+Meta documents the Depth API's behavior and range but not its resolution or frame
+rate — resolution is queried at runtime via `xrGetEnvironmentDepthSwapchainStateMETA`,
+and rate isn't specified at all. Every bandwidth figure in
+[PROTOCOL.md](PROTOCOL.md) rests on a placeholder assumption.
+
+**Mitigation:** the first task of M3 is a measurement harness that logs actual
+resolution, format, delivered rate, latency, and valid-pixel ratio in a real room.
+Bandwidth and reconstruction parameters get recomputed from those numbers before
+any encoder work begins.
+
+**If it's worse than assumed** — say, low resolution or under 10 Hz — the mesh gets
+coarser and convergence slower, but the architecture is unaffected. Compensate
+with a longer calibration sweep and a larger voxel size.
+
+---
+
+## R-02 — Camera data policy
+
+**Impact:** high (if color is enabled) · **Likelihood:** medium
+
+Passthrough camera imagery is Device User Data under Meta's Developer Data Use
+Policy. The policy prohibits surveillance uses and unique device/user
+identification, and Meta's documentation steers firmly toward on-device
+processing. Streaming raw camera frames off-device is the shape of thing that
+attracts scrutiny, particularly under store review.
+
+**Mitigation:** [ADR-005](DECISIONS.md#adr-005-colour-is-opt-in-and-computed-on-device)
+— colorize on device, transmit only vertex colors, never raw frames. Geometry-only
+is the default and never requests camera permission.
+
+**Note:** depth data is derived from the cameras but is a separate API with
+separate handling. This risk applies specifically to the color path.
+
+---
+
+## R-03 — Wi-Fi throughput and stability
+
+**Impact:** high · **Likelihood:** medium
+
+Quest Wi-Fi throughput varies a lot with AP quality, band, congestion, and how the
+wearer is oriented relative to the AP (the wearer's own head attenuates the
+signal). A stream that works at the desk can collapse across the room.
+
+**Mitigation:**
+
+- Adaptive quality with automatic step-down and a *visible* degraded state
+- Drop policy that sheds color first, then depth, never mesh or control
+- `adb reverse` over USB during development, so measurements aren't polluted by
+  radio variance
+- Document the AP requirement plainly: 5 GHz or 6 GHz, ideally Wi-Fi 6, ideally
+  same-room
+
+---
+
+## R-04 — Session lifecycle
+
+**Impact:** medium · **Likelihood:** certain
+
+Horizon OS does not allow background camera or depth capture. Capture stops when:
+
+- the headset is removed (proximity sensor)
+- the app loses focus (system menu, notification, guardian breach)
+- the user enters passthrough-only system state
+
+**Mitigation:** treat these as first-class states, not errors. The HUD and the
+viewer both show `PAUSED — headset removed` explicitly. Resume restores the
+session without recalibration as long as the anchor still resolves. Nothing is
+lost on the host, since the volume persists across pauses.
+
+**Not mitigable:** unattended capture is impossible. Someone wears the headset for
+as long as capture runs.
+
+---
+
+## R-05 — Thermal throttling
+
+**Impact:** medium · **Likelihood:** medium
+
+Depth + camera + encoder + sustained radio is a meaningful thermal load, even
+with no rendering. Quest throttles CPU/GPU clocks as it heats, which shows up as
+degraded frame delivery long before anything visibly fails.
+
+**Mitigation:** rendering nothing is already the single biggest thermal saving
+available. Beyond that: 72 Hz lock, poll `OVRManager` thermal state and surface it
+in `Stats` and on the HUD, automatic quality step-down on elevated thermals, and
+document expected session length once measured.
+
+---
+
+## R-06 — Reconstruction quality in real rooms
+
+**Impact:** medium · **Likelihood:** high
+
+Stereo-derived depth degrades on the surfaces that fill actual rooms: windows,
+mirrors, glossy tables, TV screens, blank white walls, thin structures like chair
+legs. Beyond roughly 4–5 m, precision falls off sharply.
+
+**Mitigation:**
+
+- Initialize the TSDF from the MRUK scene mesh — the system's own capture already
+  has plausible geometry where live depth is unreliable
+- Use MRUK plane semantics to constrain walls, floor, and ceiling, which are the
+  large flat surfaces stereo depth handles worst
+- Per-voxel confidence from depth validity, surfaced in the viewer so low-confidence
+  geometry is visibly marked rather than silently wrong
+- Set expectations: this produces a useful realtime spatial model, not a
+  metrology-grade scan
+
+---
+
+## R-07 — Anchor loss and drift
+
+**Impact:** medium · **Likelihood:** low
+
+If the origin anchor can't be resolved — the system's map was reset, lighting
+changed drastically, the room was rearranged — poses become untrustworthy.
+
+**Mitigation:** [ADR-003](DECISIONS.md#adr-003-a-spatial-anchor-is-the-world-origin).
+Capture pauses rather than streaming suspect data. Recovery attempts run with
+backoff; sustained failure forces recalibration. Corrupting the volume is strictly
+worse than stopping.
+
+---
+
+## R-08 — Unity frame overhead
+
+**Impact:** low · **Likelihood:** low
+
+Unity's per-frame overhead exists even with nothing rendered, and could in
+principle eat into the latency budget.
+
+**Mitigation:** measure at M1, when the app is at its simplest. If it's a problem
+it will be obvious then, and the native OpenXR path stays open —
+[ADR-001](DECISIONS.md#adr-001-unity-6--meta-xr-sdk-for-the-capture-app) documents
+what switching would cost.
+
+---
+
+## R-09 — Space Setup dependency
+
+**Impact:** low · **Likelihood:** medium
+
+The app can request Meta's Space Setup flow but cannot script it. The user might
+back out, do it badly, or produce a room model that doesn't match reality.
+
+**Mitigation:** the M2 quality gate catches bad captures with specific, actionable
+guidance rather than a generic failure. Floor-height sanity checking specifically
+catches the most damaging failure mode, where a mis-detected floor poisons every
+subsequent frame.
+
+---
+
+## Hardware requirements summary
+
+| | Requirement |
+| --- | --- |
+| **Headset** | Quest 3 or Quest 3S, Horizon OS v74+ (v83+ for 1280×1280 camera) |
+| **Not supported** | Quest 2, Quest Pro, Quest 1 — no Depth API, no camera access |
+| **Network** | 5 GHz or 6 GHz Wi-Fi, same room as the AP preferred |
+| **Host** | GPU with 4 GB+ VRAM for realtime TSDF at 2 cm |
+| **Viewer** | Any WebGL2 browser; desktop app on Windows/macOS/Linux |
