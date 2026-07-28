@@ -81,6 +81,18 @@
   #legend span { display: flex; align-items: center; gap: 5px; color: var(--dim); }
   #legend i { width: 10px; height: 10px; border-radius: 2px; display: block; }
 
+  #connect-bar {
+    left: 50%; top: 50%; transform: translate(-50%, -50%);
+    display: none; flex-direction: column; gap: 8px; min-width: 280px;
+  }
+  #connect-bar.visible { display: flex; }
+  #connect-bar label { color: var(--dim); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+  #connect-bar input {
+    font: inherit; color: var(--text); background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px;
+  }
+  #connect-bar input:focus { outline: none; border-color: var(--accent); }
+
   #toast {
     left: 50%; bottom: 64px; transform: translateX(-50%) translateY(8px);
     opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
@@ -134,6 +146,13 @@
     <span><i style="background:#fde047"></i>8s</span>
     <span><i style="background:#fb923c"></i>20s</span>
     <span><i style="background:#64748b"></i>stale</span>
+  </div>
+
+  <div class="panel" id="connect-bar">
+    <label for="host-input">host address</label>
+    <input id="host-input" type="text" placeholder="192.168.1.42:8787" spellcheck="false"
+           autocapitalize="off" autocomplete="off">
+    <button id="host-go">connect</button>
   </div>
 
   <div class="panel" id="toast"></div>

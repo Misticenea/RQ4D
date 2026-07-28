@@ -27,25 +27,55 @@ let poseArrivals = [];
 let chunkArrivals = [];
 let hostStatus = null;
 
-// The viewer is served by the host itself, so its address is where we came
-// from. No configuration, no IP to type twice — open the URL shown on the
-// headset and it connects to the right place by construction.
+const HOST_KEY = 'rq4d.host';
+
+// Served by the host itself, so its address is normally just where we came
+// from — no configuration and no IP to type twice. The single-file build
+// breaks that assumption: opened from disk there is no origin to infer, so
+// fall back to an explicit address, remembered between sessions.
 function hostUrl() {
   const override = new URLSearchParams(location.search).get('host');
-  if (override) return override;
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${location.host}/ws`;
+  if (override) return normaliseHost(override);
+  if (location.protocol === 'http:' || location.protocol === 'https:') {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${location.host}/ws`;
+  }
+  const saved = localStorage.getItem(HOST_KEY);
+  return saved ? normaliseHost(saved) : '';
+}
+
+// Accept whatever a person reasonably types: a bare IP, an IP and port, or a
+// full URL of either scheme. Reading an address off a headset through
+// passthrough is error-prone enough without demanding exact syntax.
+function normaliseHost(input) {
+  let value = input.trim();
+  if (!value) return '';
+  value = value.replace(/^https?:\/\//, 'ws://').replace(/^wss:\/\//, 'wss://');
+  if (!/^wss?:\/\//.test(value)) value = `ws://${value}`;
+  const url = new URL(value);
+  if (!url.port) url.port = '8787';
+  if (url.pathname === '/' || url.pathname === '') url.pathname = '/ws';
+  return url.toString();
 }
 
 function connect() {
   clearTimeout(reconnectTimer);
-  setLink('connecting', hostUrl());
+  const url = hostUrl();
+  if (!url) {
+    setLink('offline', 'enter host address');
+    document.getElementById('connect-bar').classList.add('visible');
+    return;
+  }
+  document.getElementById('connect-bar').classList.remove('visible');
+  setLink('connecting', url);
 
-  socket = new WebSocket(hostUrl());
+  socket = new WebSocket(url);
   socket.binaryType = 'arraybuffer';
 
   socket.onopen = () => {
-    setLink('connected', location.host);
+    // `location.host` is empty for a file:// page, so show the address we
+    // actually dialled rather than a blank label.
+    setLink('connected', url.replace(/^wss?:\/\//, '').replace(/\/ws$/, ''));
     socket.send(encodeJson(Msg.HELLO, {
       protocol_version: '0.1',
       role: 'viewer',
@@ -184,6 +214,18 @@ document.getElementById('refit').addEventListener('click', () => {
   const box = room.bounds.isEmpty() ? sceneBounds() : room.bounds.clone();
   orbit.frame(box);
 });
+
+const hostInput = document.getElementById('host-input');
+function submitHost() {
+  const value = hostInput.value.trim();
+  if (!value) return;
+  localStorage.setItem(HOST_KEY, value);
+  if (socket) { socket.onclose = null; socket.close(); }
+  connect();
+}
+document.getElementById('host-go').addEventListener('click', submitHost);
+hostInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitHost(); });
+hostInput.value = localStorage.getItem(HOST_KEY) ?? '';
 
 // -- loop -------------------------------------------------------------------
 
