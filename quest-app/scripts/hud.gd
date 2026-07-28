@@ -23,6 +23,7 @@ var _paused := false
 var _link_up := false
 var _link_url := ""
 var _viewer_url := ""
+var _anchored := false
 
 
 func _ready() -> void:
@@ -51,6 +52,13 @@ func set_link(up: bool, url: String) -> void:
 ## through passthrough while wearing the thing.
 func set_viewer_url(url: String) -> void:
 	_viewer_url = url
+
+
+## Without a tracked anchor the session still runs, but poses are in tracking
+## space and will shear over time. That is a degraded mode, not an equivalent
+## one, so it is stated rather than hidden.
+func set_anchored(anchored: bool) -> void:
+	_anchored = anchored
 
 
 func set_calibration(_state: int, message: String) -> void:
@@ -94,6 +102,9 @@ func update_status(net_status: Dictionary, depth_status: Dictionary, streaming: 
 	lines.append("depth   %.1f Hz of %.0f target" % [achieved, target])
 	if depth_status.get("dropped_inflight", 0) > 0:
 		lines.append("        %d skipped, readback busy" % depth_status["dropped_inflight"])
+
+	if not _anchored:
+		lines.append("!  no spatial anchor — poses will drift")
 
 	var err := str(depth_status.get("error", ""))
 	if err != "":

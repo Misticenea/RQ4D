@@ -121,10 +121,10 @@ func _drain_incoming() -> void:
 				# connected through. Over `adb reverse` we only know
 				# 127.0.0.1, which nobody can type into a browser elsewhere.
 				var ack := Wire.decode_json(frame)
-				var url := str(ack.get("viewer_url", ""))
-				if url != "" and url != viewer_url:
-					viewer_url = url
-					viewer_url_received.emit(url)
+				var advertised := str(ack.get("viewer_url", ""))
+				if advertised != "" and advertised != viewer_url:
+					viewer_url = advertised
+					viewer_url_received.emit(advertised)
 
 
 func _flush() -> void:

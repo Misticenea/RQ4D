@@ -47,7 +47,7 @@ func _ready() -> void:
 	net.viewer_url_received.connect(hud.set_viewer_url)
 	net.start(_load_host_url())
 
-	if not depth.setup(xr_origin, xr_camera):
+	if not depth.setup(calibration.to_anchor, xr_camera):
 		# Not fatal: calibration still produces a usable static room model, and
 		# saying exactly what is missing beats a silent stream of nothing.
 		hud.set_warning(depth.last_error)
@@ -88,6 +88,7 @@ func _attach_meta_nodes() -> void:
 
 
 func _process(delta: float) -> void:
+	hud.set_anchored(calibration.has_anchor())
 	hud.update_status(net.status(), depth.status(), _streaming)
 	if not _streaming:
 		return
@@ -99,12 +100,15 @@ func _process(delta: float) -> void:
 
 
 func _send_pose() -> void:
-	var to_anchor := xr_origin.global_transform.affine_inverse()
+	var to_anchor := calibration.to_anchor()
 	var head := to_anchor * xr_camera.global_transform
 	var views: Array[Transform3D] = []
 	var fovs: Array = []
 	for i in _xr.get_view_count():
-		views.append(to_anchor * xr_origin.global_transform * _xr.get_transform_for_view(i, Transform3D()))
+		# get_transform_for_view returns the eye relative to the XR origin, so
+		# lift it to world space before expressing it in the anchor frame.
+		var eye := xr_origin.global_transform * _xr.get_transform_for_view(i, Transform3D())
+		views.append(to_anchor * eye)
 		fovs.append(Wire.fov_from_projection(
 			_xr.get_projection_for_view(i, 1.0, 0.1, 100.0)
 		))

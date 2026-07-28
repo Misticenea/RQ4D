@@ -49,6 +49,7 @@ var _covered: Dictionary = {}
 var _expected_cells: int = 0
 var _bounds_min := Vector3.ZERO
 var _bounds_max := Vector3.ZERO
+var _anchor_node: Node3D = null
 
 
 func setup(origin: XROrigin3D, camera: XRCamera3D, scene_manager: Node, anchor_manager: Node) -> void:
@@ -56,6 +57,9 @@ func setup(origin: XROrigin3D, camera: XRCamera3D, scene_manager: Node, anchor_m
 	_camera = camera
 	_scene_manager = scene_manager
 	_anchor_manager = anchor_manager
+
+	if _anchor_manager != null and _anchor_manager.has_signal("openxr_fb_spatial_anchor_tracked"):
+		_anchor_manager.openxr_fb_spatial_anchor_tracked.connect(_on_anchor_tracked)
 
 	if _scene_manager != null:
 		if _scene_manager.has_signal("openxr_fb_scene_data_missing"):
@@ -102,7 +106,7 @@ func _collect_room() -> void:
 	for entity in _spatial_entities():
 		var labels: PackedStringArray = entity.get_semantic_labels() if \
 			entity.has_method("get_semantic_labels") else PackedStringArray()
-		var label := labels[0] if labels.size() > 0 else "unknown"
+		var label: String = labels[0] if labels.size() > 0 else "unknown"
 		var xform: Transform3D = _entity_transform(entity)
 		var record := {
 			"label": label,
@@ -166,9 +170,33 @@ func _establish_anchor() -> void:
 		# aligned to the tracking frame. Relaunching in the same room lands on
 		# the same origin without asking the user to do anything.
 		var centre := (_bounds_min + _bounds_max) * 0.5
-		centre.y = room_profile.get("floor_height", 0.0)
+		centre.y = float(room_profile.get("floor_height", 0.0))
 		_anchor_manager.create_anchor(Transform3D(Basis(), centre), {"role": "rq4d_origin"})
 	_begin_settle()
+
+
+func _on_anchor_tracked(anchor_node: Node3D, _entity, _is_new: bool) -> void:
+	_anchor_node = anchor_node
+
+
+## World-to-anchor transform — the frame everything on the wire is expressed in.
+##
+## ADR-003: a persisted spatial anchor is the origin, because tracking space
+## drifts and jumps on relocalisation and data anchored to it shears over a
+## long session, invisibly until it is badly wrong.
+##
+## Falls back to the XR origin when no anchor is tracked yet. That fallback is
+## a degraded mode, not an equivalent one — it is why the HUD says so.
+func to_anchor() -> Transform3D:
+	if _anchor_node != null and is_instance_valid(_anchor_node):
+		return _anchor_node.global_transform.affine_inverse()
+	if _origin != null:
+		return _origin.global_transform.affine_inverse()
+	return Transform3D()
+
+
+func has_anchor() -> bool:
+	return _anchor_node != null and is_instance_valid(_anchor_node)
 
 
 func _load_saved_anchor() -> Array:
@@ -237,7 +265,9 @@ func _accumulate_coverage() -> void:
 		return
 	var xform := _camera.global_transform
 	var forward := -xform.basis.z
-	for distance in [1.0, 2.0, 3.0]:
+	# The loop variable needs its type stated: values from an untyped array
+	# literal are Variant, so anything derived from them is too.
+	for distance: float in [1.0, 2.0, 3.0]:
 		var p := xform.origin + forward * distance
 		var cell := Vector2i(
 			int(floor(p.x / COVERAGE_CELL_M)), int(floor(p.z / COVERAGE_CELL_M))
@@ -246,12 +276,10 @@ func _accumulate_coverage() -> void:
 
 
 func _sweep_hint() -> String:
-	if _camera == null:
+	if _expected_cells <= 0:
 		return "Look around"
-	var yaw := _camera.global_transform.basis.get_euler().y
-	return "Keep turning — %d%% covered" % int(
-		100.0 * float(_covered.size()) / float(_expected_cells)
-	) if absf(yaw) < TAU else "Look around"
+	var pct := int(100.0 * float(_covered.size()) / float(_expected_cells))
+	return "%d%% covered" % pct
 
 
 func _finish(coverage: float) -> void:

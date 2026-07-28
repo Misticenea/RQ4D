@@ -45,12 +45,14 @@ var _request_in_flight := false
 var _next_request_us: int = 0
 var _pending_pose := Transform3D()
 var _recent_us: Array[int] = []
-var _origin: Node3D = null
 var _camera: XRCamera3D = null
+var _to_anchor: Callable = Callable()
 
 
-func setup(origin: Node3D, camera: XRCamera3D) -> bool:
-	_origin = origin
+## `to_anchor` supplies the world-to-anchor transform each frame rather than a
+## fixed node, because the anchor may only start tracking after capture begins.
+func setup(to_anchor: Callable, camera: XRCamera3D) -> bool:
+	_to_anchor = to_anchor
 	_camera = camera
 
 	if not ClassDB.class_exists("OpenXRMetaEnvironmentDepthExtension"):
@@ -170,9 +172,10 @@ func _note_rate() -> void:
 ## Everything on the wire is expressed relative to the calibration anchor, so a
 ## tracking-space jump never reaches the host.
 func _anchor_relative(world: Transform3D) -> Transform3D:
-	if _origin == null:
+	if not _to_anchor.is_valid():
 		return world
-	return _origin.global_transform.affine_inverse() * world
+	var to_anchor: Transform3D = _to_anchor.call()
+	return to_anchor * world
 
 
 func status() -> Dictionary:

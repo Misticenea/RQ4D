@@ -131,7 +131,9 @@ static func encode_depth_frame(
 	# Row-major on the wire: numpy reads it as [row][col], so emit each of the
 	# four Projection columns as a row of four floats in that order.
 	for c in 4:
-		var col := inv_proj[c]
+		# Explicitly typed: indexing a Projection yields Variant, which `:=`
+		# refuses to infer from.
+		var col: Vector4 = inv_proj[c]
 		buf.put_float(col.x)
 		buf.put_float(col.y)
 		buf.put_float(col.z)
