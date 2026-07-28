@@ -57,6 +57,31 @@ longer the preferred one.
 
 ---
 
+## ADR-010: Colour requires the Godot client
+
+**Decision:** any feature needing colour or texture is Godot-only.
+
+**Why:** WebXR has no passthrough camera access. Not a gap awaiting a flag —
+the API does not exist. Meta's Passthrough Camera API is the only route to
+pixels, and it is native-only.
+
+This narrows [ADR-009](#adr-009-two-capture-clients-webxr-preferred) rather
+than overturning it. WebXR remains preferred for geometry-only realtime
+streaming, on the strength of its depth rate. It cannot serve the recording
+and scanning scope in [RECORDING.md](RECORDING.md), which is colour-first.
+
+**Consequence:** the Godot APK moves from optional to required, which promotes
+the export-configuration blocker in `quest-app/README.md` from an
+inconvenience to something on the critical path.
+
+**Worth noting on policy:** this scope is *better* for
+[R-02](RISKS.md#r-02--camera-data-policy) than streaming was. Processing
+on-device and exporting a finished textured model means no camera frame ever
+leaves the headset, which is precisely the shape Meta's Developer Data Use
+Policy steers toward.
+
+---
+
 ## ADR-009: Two capture clients, WebXR preferred
 
 **Decision:** keep the Godot client, add a WebXR one, and prefer WebXR.

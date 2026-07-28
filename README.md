@@ -24,6 +24,7 @@ Three things define this project:
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | Wire format, message types, compression, bandwidth math |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | ADRs with rationale, plus open questions needing a call |
 | [docs/RISKS.md](docs/RISKS.md) | Platform limits, policy constraints, mitigations |
+| [docs/RECORDING.md](docs/RECORDING.md) | Recording, scan mode, colour, and export to glTF/Alembic |
 | [quest-webxr/README.md](quest-webxr/README.md) | The WebXR capture client |
 
 ## Planned layout
