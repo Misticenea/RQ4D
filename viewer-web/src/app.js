@@ -1,7 +1,7 @@
 // RQ4D viewer — connects to the reconstruction host and renders the live mesh.
 
 import * as THREE from '../vendor/three.module.js';
-import { Msg, TRACKING_LABELS, decodeFrame, decodeMeshChunk, decodePoseFrame, encodeJson } from './wire.js';
+import { Msg, TRACKING_LABELS, decodeFrame, decodeMeshChunk, decodePoseFrame, encodeJson } from 'rq4d/wire';
 import { ChunkManager } from './chunks.js';
 import { HeadsetGizmo, Orbit, RoomView, createScene } from './scene.js';
 

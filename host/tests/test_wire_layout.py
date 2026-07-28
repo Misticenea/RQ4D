@@ -78,8 +78,11 @@ def test_depth_frame_field_offsets():
 
 def test_depth_frame_round_trip_float():
     depth = np.random.default_rng(0).random((6, 8)).astype(np.float32)
+    # depth_scale is meaningful for float frames too: WebXR supplies metres
+    # as raw * rawValueToMeters, so an already-metric frame declares 1.0.
     df = DepthFrame(
-        0, 8, 6, IDENTITY, FOV, depth, encoding=DepthEncoding.RAW_F32,
+        0, 8, 6, IDENTITY, FOV, depth, depth_scale=1.0,
+        encoding=DepthEncoding.RAW_F32,
     )
     back = DepthFrame.unpack(memoryview(df.pack()))
     assert back.width == 8 and back.height == 6

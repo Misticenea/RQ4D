@@ -34,8 +34,17 @@ WS_PATH = "/ws"
 
 
 class StaticFiles:
-    def __init__(self, root: Path):
+    """Serves the viewer, the WebXR capture client, and the codec they share.
+
+    Mounted rather than a single root so both clients can import the *same*
+    `wire.js`. Two hand-maintained copies of a byte layout is precisely how a
+    protocol drifts out of sync and produces geometry that decodes into
+    plausible nonsense.
+    """
+
+    def __init__(self, root: Path, mounts: dict[str, Path] | None = None):
         self.root = root.resolve()
+        self.mounts = {p: d.resolve() for p, d in (mounts or {}).items()}
 
     def response(self, path: str) -> Response | None:
         """An HTTP response for `path`, or None to let the WebSocket upgrade."""
@@ -50,11 +59,20 @@ class StaticFiles:
             # keeps a 404 out of the console on an otherwise clean startup.
             return Response(204, "No Content", Headers({"Content-Length": "0"}))
 
-        target = (self.root / clean.lstrip("/")).resolve()
+        root = self.root
+        for prefix, directory in self.mounts.items():
+            if clean == prefix.rstrip("/") or clean.startswith(prefix):
+                root = directory
+                clean = clean[len(prefix.rstrip("/")) :] or "/"
+                if clean.endswith("/"):
+                    clean += "index.html"
+                break
+
+        target = (root / clean.lstrip("/")).resolve()
         # Containment check before touching the filesystem: this server binds
         # to a LAN interface, and path traversal here would hand out anything
         # readable by the process.
-        if not target.is_relative_to(self.root) or not target.is_file():
+        if not target.is_relative_to(root) or not target.is_file():
             return _text(404, "Not Found", f"no such file: {clean}\n")
 
         body = target.read_bytes()
@@ -102,3 +120,8 @@ def lan_address() -> str:
 
 def viewer_url(port: int) -> str:
     return f"http://{lan_address()}:{port}"
+
+
+def capture_url(port: int) -> str:
+    """The page the *headset* opens. Shown on the viewer and logged at start."""
+    return f"http://{lan_address()}:{port}/capture/"

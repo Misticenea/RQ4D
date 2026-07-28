@@ -20,7 +20,7 @@ import websockets
 from websockets.asyncio.server import ServerConnection, serve
 
 from .pipeline import ClientState, PipelineConfig, Session
-from .static import StaticFiles, viewer_url
+from .static import StaticFiles, capture_url, viewer_url
 from .volume import VolumeConfig
 from .wire import (
     PROTOCOL_VERSION,
@@ -232,7 +232,14 @@ async def run(args) -> None:
 
     url = viewer_url(args.port)
     hub = Hub(session, publish_hz=args.publish_hz, viewer=url)
-    static = StaticFiles(Path(args.viewer).resolve())
+    repo = Path(__file__).resolve().parents[2]
+    static = StaticFiles(
+        Path(args.viewer).resolve(),
+        {
+            "/capture/": repo / "quest-webxr",
+            "/protocol/": repo / "protocol" / "js",
+        },
+    )
 
     def process_request(connection, request):
         return static.response(request.path)
@@ -240,10 +247,11 @@ async def run(args) -> None:
     async with serve(
         hub.handle, args.host, args.port, max_size=None, process_request=process_request
     ):
-        log.info("=" * 52)
+        log.info("=" * 60)
         log.info("  viewer   %s", url)
-        log.info("  headset  ws://%s:%d/ws", static_host(args.host, url), args.port)
-        log.info("=" * 52)
+        log.info("  capture  %s   <- open this in the Quest browser", capture_url(args.port))
+        log.info("  godot    ws://%s:%d/ws", static_host(args.host, url), args.port)
+        log.info("=" * 60)
         await asyncio.gather(hub.publish_loop(), hub.stats_loop())
 
 

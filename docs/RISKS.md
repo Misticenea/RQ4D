@@ -164,7 +164,18 @@ subsequent frame.
 
 ## R-10 — Depth readback rate on Godot
 
-**Impact:** high · **Likelihood:** unknown, and that is the problem
+**Impact:** high on the Godot path · **Status:** sidestepped, not solved
+
+**Update:** measured on device, WebXR's depth sensing on Quest 3 is realtime.
+Its API is only valid *inside* the animation-frame callback, which is a
+per-frame contract by construction rather than an async readback with a
+cost caveat. `quest-webxr/` exists because of that measurement.
+
+This risk still stands for the Godot client, whose rate remains unmeasured.
+It is no longer a risk to the *project*, because the producer is replaceable
+by design and a producer without the problem now exists.
+
+The rest of this entry is the original assessment.
 
 Godot's `get_environment_depth_map_async` is documented as something to call
 "approximately every 1–2 seconds, not per-frame". Every bandwidth, latency and

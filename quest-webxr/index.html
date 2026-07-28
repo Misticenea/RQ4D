@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RQ4D capture</title>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: rgba(17,24,33,0.9); --line: rgba(148,176,208,0.18);
+    --text: #dbe6f2; --dim: #7d8fa3; --accent: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.6 ui-monospace, Menlo, Consolas, monospace;
+    display: grid; place-items: center; padding: 24px;
+  }
+  /* In an immersive session this is the DOM overlay drawn on the lenses, so it
+     stays deliberately sparse — the reconstruction is never shown here. */
+  #hud { width: min(520px, 100%); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px 20px; margin-bottom: 12px;
+  }
+  h1 { font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase; margin: 0 0 14px; }
+  #status {
+    display: inline-block; padding: 2px 10px; border-radius: 999px;
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    background: rgba(100,116,139,0.25);
+  }
+  #status[data-kind="connected"], #status[data-kind="streaming"] { background: rgba(74,222,128,0.22); color: #86efac; }
+  #status[data-kind="starting"] { background: rgba(251,191,36,0.22); color: #fde047; }
+  #status[data-kind="offline"], #status[data-kind="error"] { background: rgba(248,113,113,0.22); color: #fca5a5; }
+  #detail { color: var(--dim); margin-top: 8px; word-break: break-all; }
+  #stats { white-space: pre-line; color: var(--dim); font-variant-numeric: tabular-nums; margin-top: 12px; }
+  #warn {
+    background: rgba(251,146,60,0.14); border-color: rgba(251,146,60,0.4);
+    color: #fdba74; font-size: 13px;
+  }
+  label { display: block; color: var(--dim); font-size: 12px; letter-spacing: 0.1em;
+          text-transform: uppercase; margin-bottom: 6px; }
+  input, button {
+    font: inherit; color: var(--text); width: 100%;
+    background: rgba(0,0,0,0.35); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 12px;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  button {
+    margin-top: 12px; cursor: pointer; background: rgba(56,189,248,0.14);
+    border-color: var(--accent); color: var(--accent); font-weight: 600;
+  }
+  button:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--line); color: var(--dim); }
+  p.note { color: var(--dim); font-size: 13px; margin: 10px 0 0; }
+</style>
+</head>
+<body>
+  <div id="hud">
+    <div class="card">
+      <h1>RQ4D capture</h1>
+      <span id="status" data-kind="offline">offline</span>
+      <div id="detail">connecting…</div>
+      <div id="stats"></div>
+    </div>
+
+    <div class="card" id="warn" hidden></div>
+
+    <div class="card" id="setup">
+      <label for="host">host address</label>
+      <input id="host" type="text" placeholder="leave blank if this page came from the host"
+             spellcheck="false" autocapitalize="off" autocomplete="off">
+      <button id="enter">enter capture session</button>
+      <p class="note">
+        Open this page in the Quest browser. Nothing is drawn on the lenses —
+        the model appears in the viewer, not here.
+      </p>
+    </div>
+  </div>
+
+  <script type="importmap">
+    {"imports": {"rq4d/wire": "/protocol/wire.js"}}
+  </script>
+  <script type="module" src="./src/capture.js"></script>
+</body>
+</html>

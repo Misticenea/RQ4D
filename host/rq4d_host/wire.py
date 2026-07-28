@@ -259,7 +259,11 @@ class DepthFrame:
         to save none here.
         """
         if self.encoding == DepthEncoding.RAW_F32:
-            return np.ascontiguousarray(self.depth, np.float32)
+            # Scaled, not passed through. WebXR reports depth as raw values
+            # plus a `rawValueToMeters` factor, which arrives here as
+            # depth_scale; ignoring it silently doubled or halved the whole
+            # reconstruction depending on the device's chosen units.
+            return np.ascontiguousarray(self.depth, np.float32) * self.depth_scale
         if self.encoding == DepthEncoding.RAW_F32_NDC:
             return self._linearise()
         return self.depth.astype(np.float32) * self.depth_scale

@@ -57,6 +57,7 @@ def bundle(esbuild: str, minify: bool) -> str:
         "--format=iife",
         "--target=es2020",
         "--log-level=warning",
+        f"--alias:rq4d/wire={ROOT / 'protocol/js/wire.js'}",
     ]
     if minify:
         cmd.append("--minify")
@@ -76,6 +77,9 @@ def build(minify: bool = True) -> Path:
     # imports left and module scripts are blocked on file:// in some browsers.
     # A callable replacement, not a string: bundled JS is full of backslashes
     # that re.sub would otherwise read as escape sequences and reject.
+    # The import map only exists to resolve the shared codec at serve time;
+    # the bundle has it inlined, so drop it rather than ship a dead mapping.
+    html = re.sub(r'\s*<script type="importmap">.*?</script>', "", html, flags=re.S)
     html, count = re.subn(
         r'\s*<script type="module" src="[^"]*"></script>',
         lambda _: "\n  <script>\n" + js.rstrip() + "\n  </script>",

@@ -47,8 +47,53 @@ warning, so this risk arrived with the engine change and is tracked as
 **Contained by:** the capture app only has to produce `DepthFrame` messages.
 If the async API caps out, a C++ GDExtension reading the depth swapchain
 directly replaces that one component and the wire format, host and viewer are
-untouched. WebXR stays out — no passthrough camera, and a far weaker depth
-module.
+untouched.
+
+**Partly overtaken by [ADR-009](#adr-009-two-capture-clients-webxr-preferred).**
+This entry dismissed WebXR as having "a far weaker depth module". That was
+wrong, and measuring it is what showed so — see ADR-009. The Godot client
+remains, because it is written and it is the only path to colour, but it is no
+longer the preferred one.
+
+---
+
+## ADR-009: Two capture clients, WebXR preferred
+
+**Decision:** keep the Godot client, add a WebXR one, and prefer WebXR.
+
+**Why:** the reason WebXR was originally rejected — a weaker depth module than
+native — turned out not to hold. Quest's browser exposes depth sensing with
+per-frame CPU access, persistent anchors, plane detection with semantic
+labels, and mesh detection. Every capability the Godot client uses is present.
+
+What decided it was a measurement rather than a comparison of feature lists.
+Godot's CPU depth readback is documented as a 1-2 second operation, which
+would have capped the whole design; WebXR's is only valid inside the animation
+frame callback, and on device it is realtime. That was
+[RISKS.md R-10](RISKS.md#r-10--depth-readback-rate-on-godot), the largest
+unknown in the project.
+
+Secondary, but not small:
+
+- **One codec instead of two.** Both the viewer and the WebXR client import the
+  same `protocol/js/wire.js`. The GDScript copy is maintained by hand against a
+  comment; this one is pinned by a test that encodes in Node and decodes in
+  Python. That test found a real bug on its first run — the host was ignoring
+  `depth_scale` on float frames, which would have scaled the entire
+  reconstruction wrong.
+- **No APK, no export templates, no sideload, no developer mode.** The host
+  already serves the viewer; it serves the capture page from the same port.
+- Iteration is edit-and-reload rather than build-and-deploy.
+
+**Cost accepted:** passthrough camera access does not exist in WebXR, so M5
+colour is impossible on this path — it stays a Godot-only option, and it was
+already optional. WebXR persistent anchors are also less durable: they are
+dropped in private browsing and when site data is cleared, where Godot writes
+a file.
+
+**Why keep the Godot client:** it is written, it parses, and it is the only
+path to colour. Nothing downstream distinguishes them, so carrying both costs
+little and the device will settle which one is better.
 
 ---
 

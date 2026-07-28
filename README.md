@@ -24,11 +24,14 @@ Three things define this project:
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | Wire format, message types, compression, bandwidth math |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | ADRs with rationale, plus open questions needing a call |
 | [docs/RISKS.md](docs/RISKS.md) | Platform limits, policy constraints, mitigations |
+| [quest-webxr/README.md](quest-webxr/README.md) | The WebXR capture client |
 
 ## Planned layout
 
 ```
-quest-app/        Unity 6 capture client (the headset app)
+quest-app/        Godot capture client (the headset app)
+quest-webxr/      WebXR capture client — no install, opened in the headset browser
+protocol/js/      Wire codec shared by the viewer and the WebXR client
 host/             Reconstruction service — depth frames in, mesh deltas out
 viewer-web/       three.js viewer (browser)
 viewer-desktop/   Tauri shell wrapping viewer-web (PC app)
