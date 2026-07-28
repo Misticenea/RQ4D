@@ -9,3 +9,6 @@ __pycache__/
 node_modules/
 package.json
 package-lock.json
+quest-app/.godot/
+quest-app/android/
+quest-app/build/

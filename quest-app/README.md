@@ -80,14 +80,38 @@ and the bandwidth table should be recomputed from the real figure.
 | `scripts/hud.gd` | The only thing on the lenses |
 | `scripts/main.gd` | Lifecycle, pose streaming, control handling |
 
+## Checking it without a headset
+
+```bash
+python tools/check_gdscript.py --run
+```
+
+Fetches a headless Godot on first use, parse-checks every script, then boots
+`scenes/main.tscn` for 180 frames. Parsing proves the syntax; booting proves
+the scene tree — node paths, `@onready` types and signal connections are
+runtime failures a parse check cannot see.
+
+Off-device the OpenXR runtime fails to load and prints a wall of errors on
+every invocation. Those are filtered, which creates the obvious risk that the
+filter also swallows real errors, so:
+
+```bash
+python tools/check_gdscript.py --self-test
+```
+
+injects a script with a known parse error and fails loudly if the checker
+reports it clean. Run that whenever you touch the filter.
+
 ## Status
 
-**Written but never executed.** There is no Godot install and no headset in the
-environment this was authored in, so nothing here has been run — not the
-scripts, not the export, not a single frame. The host half is different: that
-was built and measured against a synthetic Quest, and its numbers are real.
+**Parses and boots headless; never run on a headset.**
 
-Expect the first device run to surface API-shape mismatches, particularly
-around the exact keys returned by `get_environment_depth_map_async` and the
-Image format the depth arrives in. Both are handled defensively and logged
+Verified here: all six scripts parse under Godot 4.5, and the main scene boots
+and runs 180 frames with no runtime errors — XR fails to start, which
+exercises the no-headset path rather than avoiding it.
+
+Not verified, and not verifiable without a Quest: whether any of it does the
+right thing. Expect the first device run to surface API-shape mismatches,
+particularly the exact keys returned by `get_environment_depth_map_async` and
+the Image format the depth arrives in. Both are handled defensively and logged
 rather than assumed, so the failures should be legible.
