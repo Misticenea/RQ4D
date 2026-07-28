@@ -91,7 +91,7 @@ with no rendering. Quest throttles CPU/GPU clocks as it heats, which shows up as
 degraded frame delivery long before anything visibly fails.
 
 **Mitigation:** rendering nothing is already the single biggest thermal saving
-available. Beyond that: 72 Hz lock, poll `OVRManager` thermal state and surface it
+available. Beyond that: 72 Hz lock, surface the OS thermal state
 in `Stats` and on the HUD, automatic quality step-down on elevated thermals, and
 document expected session length once measured.
 
@@ -107,9 +107,9 @@ legs. Beyond roughly 4–5 m, precision falls off sharply.
 
 **Mitigation:**
 
-- Initialize the TSDF from the MRUK scene mesh — the system's own capture already
-  has plausible geometry where live depth is unreliable
-- Use MRUK plane semantics to constrain walls, floor, and ceiling, which are the
+- Initialize the TSDF from the scene mesh the room capture provides — the
+  system's own scan already has plausible geometry where live depth is unreliable
+- Use the plane semantics to constrain walls, floor, and ceiling, which are the
   large flat surfaces stereo depth handles worst
 - Per-voxel confidence from depth validity, surfaced in the viewer so low-confidence
   geometry is visibly marked rather than silently wrong
@@ -132,17 +132,19 @@ worse than stopping.
 
 ---
 
-## R-08 — Unity frame overhead
+## R-08 — Engine frame overhead
 
 **Impact:** low · **Likelihood:** low
 
-Unity's per-frame overhead exists even with nothing rendered, and could in
-principle eat into the latency budget.
+Godot's per-frame overhead exists even with nothing rendered, and could in
+principle eat into the latency budget. It is likely smaller than Unity's would
+have been — the app submits a passthrough layer and one quad, with the mobile
+renderer and no scene content.
 
-**Mitigation:** measure at M1, when the app is at its simplest. If it's a problem
-it will be obvious then, and the native OpenXR path stays open —
-[ADR-001](DECISIONS.md#adr-001-unity-6--meta-xr-sdk-for-the-capture-app) documents
-what switching would cost.
+**Mitigation:** measure at M1, when the app is at its simplest. If it is a
+problem it will be obvious then, and a GDExtension for the hot path stays open —
+[ADR-001](DECISIONS.md#adr-001-godot-45-with-the-openxr-vendors-plugin)
+documents what that costs.
 
 ---
 
@@ -157,6 +159,36 @@ back out, do it badly, or produce a room model that doesn't match reality.
 guidance rather than a generic failure. Floor-height sanity checking specifically
 catches the most damaging failure mode, where a mis-detected floor poisons every
 subsequent frame.
+
+---
+
+## R-10 — Depth readback rate on Godot
+
+**Impact:** high · **Likelihood:** unknown, and that is the problem
+
+Godot's `get_environment_depth_map_async` is documented as something to call
+"approximately every 1–2 seconds, not per-frame". Every bandwidth, latency and
+convergence figure in this plan assumes depth at 10–15 Hz. If the documented
+guidance reflects a hard ceiling rather than a caution about readback cost,
+the streaming architecture does not work through that API.
+
+This risk arrived with [ADR-001](DECISIONS.md#adr-001-godot-45-with-the-openxr-vendors-plugin).
+Meta's Unity Depth API carries no equivalent warning.
+
+**Mitigation:** `depth_capture.gd` requests at a configurable rate, keeps at
+most one request in flight, and reports the rate it achieved on the HUD.
+Measuring it is the first task of the first device session — see
+`quest-app/README.md`.
+
+**If the rate is ~1 Hz:** the calibration room model is unaffected, so the
+system still produces a usable static reconstruction with slow dynamic
+updates. Restoring full rate means a C++ GDExtension reading the
+`XR_META_environment_depth` swapchain directly. That is bounded work, and
+because viewers consume `MeshChunkUpdate` and the host consumes `DepthFrame`,
+only the producer changes.
+
+**Not mitigable by planning:** nobody can measure this without a Quest 3 on a
+head. It is the single largest unknown in the project.
 
 ---
 

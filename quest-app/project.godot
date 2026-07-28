@@ -1,0 +1,54 @@
+; RQ4D capture app — Godot 4.5+
+;
+; Requires the Godot OpenXR Vendors plugin (Meta extensions). See README.md.
+; Environment depth needs 4.5 or later; Spatial Entities landed in 4.6.
+
+config_version=5
+
+[application]
+
+config/name="RQ4D Capture"
+config/description="Streams a realtime 3D model of the room to a host. Nothing is rendered on the lenses."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.5", "Forward Plus")
+config/quit_on_go_back=false
+boot_splash/show_image=false
+
+[autoload]
+
+; wire.gd is a static-only class_name; no autoload needed.
+
+[display]
+
+window/vsync/vsync_mode=0
+window/stretch/mode="disabled"
+
+[rendering]
+
+renderer/rendering_method="mobile"
+renderer/rendering_method.mobile="mobile"
+; No scene content is drawn, so every one of these is pure saving.
+anti_aliasing/quality/msaa_3d=0
+environment/defaults/default_clear_color=Color(0, 0, 0, 0)
+environment/defaults/default_environment=""
+lights_and_shadows/directional_shadow/size=512
+occlusion_culling/use_occlusion_culling=false
+
+[xr]
+
+openxr/enabled=true
+openxr/reference_space=2
+openxr/environment_blend_mode=2
+openxr/foveation_level=3
+openxr/foveation_dynamic=true
+openxr/extensions/hand_tracking=false
+openxr/extensions/eye_gaze_interaction=false
+shaders/enabled=true
+
+[xr/openxr/extensions]
+
+meta/scene_api=true
+meta/passthrough=true
+meta/environment_depth=true
+meta/spatial_entities=true
+meta/spatial_anchors=true

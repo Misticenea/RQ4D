@@ -1,0 +1,40 @@
+[gd_scene load_steps=6 format=3 uid="uid://brq4dcapture01"]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/hud.gd" id="2_hud"]
+[ext_resource type="Script" path="res://scripts/depth_capture.gd" id="3_depth"]
+[ext_resource type="Script" path="res://scripts/net_client.gd" id="4_net"]
+[ext_resource type="Script" path="res://scripts/calibration.gd" id="5_cal"]
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="XROrigin3D" type="XROrigin3D" parent="."]
+
+[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D"]
+
+[node name="HUD" type="Node3D" parent="XROrigin3D/XRCamera3D"]
+script = ExtResource("2_hud")
+
+[node name="Panel" type="Node3D" parent="XROrigin3D/XRCamera3D/HUD"]
+
+[node name="Label" type="Label3D" parent="XROrigin3D/XRCamera3D/HUD/Panel"]
+pixel_size = 0.0006
+billboard = 1
+shaded = false
+double_sided = false
+no_depth_test = true
+font_size = 44
+outline_size = 10
+horizontal_alignment = 0
+text = "RQ4D
+starting…"
+
+[node name="DepthCapture" type="Node" parent="."]
+script = ExtResource("3_depth")
+
+[node name="NetClient" type="Node" parent="."]
+script = ExtResource("4_net")
+
+[node name="Calibration" type="Node" parent="."]
+script = ExtResource("5_cal")

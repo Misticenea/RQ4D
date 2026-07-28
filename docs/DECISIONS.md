@@ -5,29 +5,50 @@ later is a considered change rather than an archaeology exercise.
 
 ---
 
-## ADR-001: Unity 6 + Meta XR SDK for the capture app
+## ADR-001: Godot 4.5+ with the OpenXR Vendors plugin
 
-**Alternatives:** native OpenXR C++, Godot 4, WebXR in the Quest browser.
+**Superseded:** the original decision was Unity 6 with the Meta XR SDK.
 
-**Decision:** Unity 6 with the Meta XR All-in-One SDK and MRUK.
+**Alternatives:** Unity, native OpenXR C++, WebXR in the Quest browser.
 
-**Why:**
+**Decision:** Godot 4.5 or later with the
+[Godot OpenXR Vendors plugin](https://github.com/GodotVR/godot_openxr_vendors).
 
-- MRUK hands us the entire scene model — planes, volumes, semantic labels, global
-  mesh — through one API. Reimplementing that against raw `OVRAnchor` is weeks of
-  work for no benefit.
-- Depth API, Passthrough Camera API, and spatial anchors all have first-class,
-  documented Unity paths. Meta's samples are Unity samples.
-- Native OpenXR gives finer control over the depth swapchain and lower overhead —
-  genuinely attractive for a capture-only app that renders nothing. It costs
-  reimplementing scene understanding and anchor persistence. Not worth it up front;
-  revisit only if Unity's frame overhead measurably threatens the latency budget.
-- WebXR is out: no passthrough camera access, and its depth-sensing module is far
-  more limited than the native Depth API.
+**Why the change:** development happens on Linux, and Unity is not a practical
+option there for this work. The Godot editor is a first-class Linux
+application, exports Android/OpenXR APKs natively, and the vendors plugin
+covers every Meta extension this project needs. A toolchain the developer
+cannot run is not a trade-off to be weighed against others, it is a blocker.
 
-**Cost accepted:** Unity's build-deploy cycle is slow. M0 invests in scripting the
-loop, and M3's session recorder moves most reconstruction iteration off-device
-entirely.
+That the plugin actually covers the requirements was verified before
+committing to it:
+
+| Need | Godot API |
+| --- | --- |
+| Environment depth, CPU-side | `OpenXRMetaEnvironmentDepthExtension.get_environment_depth_map_async()` |
+| Room layout, semantic labels | `OpenXRFbSceneManager`, `OpenXRFbSpatialEntity.get_semantic_labels()` |
+| Room mesh (Quest 3) | `OpenXRFbSpatialEntity.get_triangle_mesh()` |
+| Trigger Space Setup | `OpenXRFbSceneManager.request_scene_capture()` |
+| Spatial anchors + persistence | `OpenXRFbSpatialAnchorManager.create_anchor()` / `load_anchors()` |
+| Passthrough | Meta passthrough extension |
+
+**Cost accepted, and it is a real one:** Meta's samples and documentation are
+Unity-first, so anything undocumented on the Godot side means reading plugin
+source rather than Meta's guides. Passthrough camera access for colour (M5) is
+not confirmed on this path and may need a GDExtension.
+
+**The live risk:** Godot documents `get_environment_depth_map_async` as
+something to call "approximately every 1-2 seconds, not per-frame". If that is
+a hard ceiling rather than a caution about cost, depth streaming at 15 Hz does
+not work through this API. Meta's Unity Depth API path carries no equivalent
+warning, so this risk arrived with the engine change and is tracked as
+[RISKS.md R-10](RISKS.md#r-10-depth-readback-rate-on-godot).
+
+**Contained by:** the capture app only has to produce `DepthFrame` messages.
+If the async API caps out, a C++ GDExtension reading the depth swapchain
+directly replaces that one component and the wire format, host and viewer are
+untouched. WebXR stays out — no passthrough camera, and a far weaker depth
+module.
 
 ---
 
@@ -80,7 +101,7 @@ is not.
 
 **Alternatives:** stream raw point clouds; stream full-mesh snapshots.
 
-**Decision:** space is divided into 1.28 m chunks; only dirty chunks are
+**Decision:** space is divided into 0.64 m chunks; only dirty chunks are
 retransmitted, versioned per chunk.
 
 **Why:**
@@ -96,9 +117,11 @@ retransmitted, versioned per chunk.
 - Chunks also give LOD and priority for free — send what's near the wearer's gaze
   first, coarse geometry for distant regions.
 
-**Chunk size rationale:** 1.28 m = 64³ voxels at 2 cm. Small enough that a local
-change is a small update, large enough that per-chunk overhead stays negligible.
-Tunable, but not per-session — it's baked into the chunk key space.
+**Chunk size rationale:** 0.64 m = 32³ voxels at 2 cm, reduced from an initial
+1.28 m after measuring the mesher — smaller chunks mean less work per dirty
+chunk and finer dirty-tracking, which matters more for responsiveness than the
+per-chunk message overhead it costs. Must be a power of two: the voxel key
+packing relies on it.
 
 ---
 
@@ -130,7 +153,7 @@ required, that's a different project with a different policy conversation.
 **Decision:** one TypeScript/three.js viewer. The desktop app is a Tauri shell
 around the same code.
 
-**Why:** the request names both a web app and a PC app. Two independent renderers
+**Why:** the brief names both a web app and a PC app. Two independent renderers
 is double the work and guaranteed drift between them. Tauri (rather than Electron)
 keeps the desktop binary small and adds native filesystem export and mDNS
 discovery, which is exactly the delta the desktop app needs over the browser.

@@ -182,8 +182,13 @@ _DEPTH_HEAD = struct.Struct("<BBBBHHfff")
 
 
 class DepthEncoding(IntEnum):
-    RAW16 = 0
-    ZSTD16 = 1
+    RAW16 = 0  # uint16, metric = value * depth_scale
+    ZSTD16 = 1  # same, zstd-compressed
+    RAW_F32 = 2  # float32 metric metres, straight from the source image
+    RAW_F32_NDC = 3  # float32 clip-space depth; needs inv_proj to linearise
+
+    def is_float(self) -> bool:
+        return self in (DepthEncoding.RAW_F32, DepthEncoding.RAW_F32_NDC)
 
 
 @dataclass(slots=True)
@@ -207,6 +212,8 @@ class DepthFrame:
     hands_removed: bool = False
     encoding: DepthEncoding = DepthEncoding.RAW16
 
+    inv_proj: np.ndarray | None = None  # (4,4) inverse projection*view, NDC only
+
     def pack(self) -> bytes:
         head = _DEPTH_HEAD.pack(
             self.view_index,
@@ -219,24 +226,69 @@ class DepthFrame:
             self.near,
             self.far,
         )
-        blob = np.ascontiguousarray(self.depth, dtype=np.uint16).tobytes()
-        return head + self.pose.pack() + _FOV.pack(*self.fov) + blob
+        inv = np.ascontiguousarray(
+            self.inv_proj if self.inv_proj is not None else np.zeros((4, 4)), np.float32
+        )
+        dtype = np.float32 if self.encoding.is_float() else np.uint16
+        blob = np.ascontiguousarray(self.depth, dtype=dtype).tobytes()
+        return head + self.pose.pack() + _FOV.pack(*self.fov) + inv.tobytes() + blob
 
     @staticmethod
     def unpack(view: memoryview) -> "DepthFrame":
         (vi, enc, hands, _, w, h, scale, near, far) = _DEPTH_HEAD.unpack_from(view, 0)
+        encoding = DepthEncoding(enc)
         off = _DEPTH_HEAD.size
         pose, off = Pose.unpack_from(view, off)
         fov = _FOV.unpack_from(view, off)
         off += _FOV.size
-        depth = np.frombuffer(view, dtype=np.uint16, count=w * h, offset=off).reshape(h, w)
+        inv = np.frombuffer(view, np.float32, 16, off).reshape(4, 4)
+        off += 64
+        dtype = np.float32 if encoding.is_float() else np.uint16
+        depth = np.frombuffer(view, dtype, w * h, off).reshape(h, w)
         return DepthFrame(
-            vi, w, h, pose, fov, depth, scale, near, far, bool(hands), DepthEncoding(enc)
+            vi, w, h, pose, fov, depth, scale, near, far, bool(hands), encoding,
+            inv if encoding == DepthEncoding.RAW_F32_NDC else None,
         )
 
     def metric(self) -> np.ndarray:
-        """Depth in metres as float32. Zero means no measurement."""
+        """Depth in metres along -Z as float32. Zero means no measurement.
+
+        Three source shapes, because the capture side does not get to choose:
+        Meta hands back a depth texture whose units depend on the path used to
+        read it, and forcing a conversion on the headset would burn CPU there
+        to save none here.
+        """
+        if self.encoding == DepthEncoding.RAW_F32:
+            return np.ascontiguousarray(self.depth, np.float32)
+        if self.encoding == DepthEncoding.RAW_F32_NDC:
+            return self._linearise()
         return self.depth.astype(np.float32) * self.depth_scale
+
+    def _linearise(self) -> np.ndarray:
+        """Clip-space depth -> metric range along -Z, via the inverse matrix.
+
+        Unprojecting with the API's own matrix avoids decomposing it into a
+        pose and a field of view first — that decomposition is where sign and
+        handedness conventions silently disagree between engines.
+        """
+        if self.inv_proj is None:
+            raise ValueError("RAW_F32_NDC depth requires inv_proj")
+        h, w = self.depth.shape
+        u = (np.arange(w, dtype=np.float32) + 0.5) / w * 2.0 - 1.0
+        v = 1.0 - (np.arange(h, dtype=np.float32) + 0.5) / h * 2.0
+        uu, vv = np.meshgrid(u, v)
+        d = np.ascontiguousarray(self.depth, np.float32)
+
+        pts = np.stack([uu, vv, d, np.ones_like(d)], -1).reshape(-1, 4)
+        world = pts @ self.inv_proj.T
+        w_comp = world[:, 3:4]
+        np.divide(world, w_comp, out=world, where=np.abs(w_comp) > 1e-9)
+
+        rel = world[:, :3] - self.pose.position[None, :]
+        forward = self.pose.matrix()[:3, 2]  # camera -Z is forward, so -basis_z
+        z = -(rel @ forward)
+        z[np.abs(w_comp[:, 0]) <= 1e-9] = 0.0
+        return z.reshape(h, w).astype(np.float32)
 
 
 # --------------------------------------------------------------------------
