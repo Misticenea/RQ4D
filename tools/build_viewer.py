@@ -27,7 +27,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer-web"
+CAPTURE = ROOT / "quest-webxr"
 OUT = VIEWER / "dist" / "rq4d-viewer.html"
+CAPTURE_OUT = CAPTURE / "dist" / "rq4d-capture.html"
 
 
 def find_esbuild() -> str:
@@ -48,11 +50,11 @@ def find_esbuild() -> str:
     return str(VIEWER / "node_modules/.bin/esbuild")
 
 
-def bundle(esbuild: str, minify: bool) -> str:
-    """Everything reachable from app.js, three.js included, as one IIFE."""
+def bundle(esbuild: str, minify: bool, entry: Path) -> str:
+    """Everything reachable from `entry`, dependencies included, as one IIFE."""
     cmd = [
         esbuild,
-        str(VIEWER / "src/app.js"),
+        str(entry),
         "--bundle",
         "--format=iife",
         "--target=es2020",
@@ -67,10 +69,11 @@ def bundle(esbuild: str, minify: bool) -> str:
     return result.stdout
 
 
-def build(minify: bool = True) -> Path:
+def build(minify: bool = True, source: Path = VIEWER, out: Path = OUT) -> Path:
     esbuild = find_esbuild()
-    js = bundle(esbuild, minify)
-    html = (VIEWER / "index.html").read_text()
+    entry = source / ("src/app.js" if (source / "src/app.js").exists() else "src/capture.js")
+    js = bundle(esbuild, minify, entry)
+    html = (source / "index.html").read_text()
 
     # The module tag is what pulls in the separate files; replace it with the
     # bundle. A plain <script> rather than type=module because the IIFE has no
@@ -94,9 +97,9 @@ def build(minify: bool = True) -> Path:
         '<meta name="description" content="Self-contained RQ4D viewer — no network fetches.">',
     )
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(html)
-    return OUT
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html)
+    return out
 
 
 def main() -> int:
@@ -104,18 +107,23 @@ def main() -> int:
     p.add_argument("--no-minify", action="store_true", help="readable output, ~3x larger")
     args = p.parse_args()
 
-    out = build(minify=not args.no_minify)
-    size = out.stat().st_size
+    targets = [(VIEWER, OUT), (CAPTURE, CAPTURE_OUT)]
+    for source, destination in targets:
+        out = build(minify=not args.no_minify, source=source, out=destination)
 
-    # A single external fetch would defeat the purpose, so check rather than
-    # assume: no src=, no href= to anything but an anchor, no import().
-    text = out.read_text()
-    leaks = re.findall(r'(?:src|href)="(?!#)([^"]+)"', text)
-    if leaks:
-        print(f"WARNING: external references remain: {leaks}", file=sys.stderr)
-        return 1
+        # A single external fetch would defeat the purpose, so check rather
+        # than assume: no src=, no href= to anything but an anchor.
+        leaks = re.findall(r'(?:src|href)="(?!#)([^"]+)"', out.read_text())
+        if leaks:
+            print(f"WARNING: external references remain in {out.name}: {leaks}", file=sys.stderr)
+            return 1
+        print(f"{out.relative_to(ROOT)}  {out.stat().st_size / 1024:.0f} KB  (self-contained)")
 
-    print(f"{out.relative_to(ROOT)}  {size / 1024:.0f} KB  (no external references)")
+    print(
+        "\nNote: the capture page needs a *secure context* — https, or localhost\n"
+        "via `adb reverse`. Opened from file:// or plain http on a LAN address,\n"
+        "navigator.xr does not exist and WebXR cannot start."
+    )
     return 0
 
 

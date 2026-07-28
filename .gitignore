@@ -12,3 +12,5 @@ package-lock.json
 quest-app/.godot/
 quest-app/android/
 quest-app/build/
+quest-app/addons/
+quest-webxr/dist/

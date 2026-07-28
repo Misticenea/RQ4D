@@ -4,16 +4,49 @@ The headset half, with no install. Open a URL in the Quest browser and it
 starts streaming. **Nothing of the reconstruction is drawn on the lenses** —
 the wearer sees passthrough plus a small status overlay.
 
+## WebXR needs a secure context — read this first
+
+`navigator.xr` only exists in a secure context. `https`, `localhost` and
+`127.0.0.1` qualify; **a LAN address over plain http does not**. Opening
+`http://192.168.1.42:8787/capture/` in the headset gives no `navigator.xr` at
+all, and the page can only report "WebXR unavailable" without being able to
+say why.
+
+Two ways to satisfy it:
+
+**Over USB — no certificate needed.**
+
+```bash
+adb reverse tcp:8787 tcp:8787
+# then in the headset: http://localhost:8787/capture/
+```
+
+localhost is a secure context. This is also the link that takes Wi-Fi variance
+out of every measurement, so it is the right choice for bring-up regardless.
+
+**Wirelessly — needs https.**
+
+```bash
+python -m rq4d_host.server --tls
+```
+
+Generates a self-signed certificate covering the host's LAN address, prints
+its fingerprint, and serves `https`/`wss`. The headset warns once and you
+accept it. That warning is expected, not a symptom.
+
 ## Use
 
 Start the host, then open the `capture` address it prints, in the headset:
 
 ```
-============================================================
-  viewer   http://192.168.1.42:8787
-  capture  http://192.168.1.42:8787/capture/   <- Quest browser
-  godot    ws://192.168.1.42:8787/ws
-============================================================
+==================================================================
+  viewer   https://192.168.1.42:8787
+  capture  https://192.168.1.42:8787/capture/
+  godot    wss://192.168.1.42:8787/ws
+
+  TLS is self-signed — the headset will warn once. Fingerprint
+  starts 6D:A1:2B:EF:E0:FE:47:6F…
+==================================================================
 ```
 
 Tap **enter capture session**, grant the permissions, and the model appears in
@@ -68,6 +101,16 @@ The depth buffer is not required to cover the view rectangle exactly;
 builds rays as though it were identity, and **measures the deviation on every
 first frame**, warning on the overlay if it is not. If that warning appears,
 the mapping has to be applied before the geometry will sit in the right place.
+
+## Single-file build
+
+```bash
+python tools/build_viewer.py   # -> quest-webxr/dist/rq4d-capture.html
+```
+
+Everything inlined, no external fetches. Useful for hosting the page somewhere
+else — but note it still has to be *served* from a secure context. Opened from
+`file://` it cannot start a session.
 
 ## Status
 

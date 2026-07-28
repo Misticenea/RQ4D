@@ -20,7 +20,8 @@ import websockets
 from websockets.asyncio.server import ServerConnection, serve
 
 from .pipeline import ClientState, PipelineConfig, Session
-from .static import StaticFiles, capture_url, viewer_url
+from .static import StaticFiles, capture_url, lan_address, viewer_url
+from .tls import fingerprint, server_context
 from .volume import VolumeConfig
 from .wire import (
     PROTOCOL_VERSION,
@@ -230,7 +231,9 @@ async def run(args) -> None:
     session = Session(cfg)
     session.start()
 
-    url = viewer_url(args.port)
+    address = lan_address()
+    scheme = "https" if args.tls else "http"
+    url = f"{scheme}://{address}:{args.port}"
     hub = Hub(session, publish_hz=args.publish_hz, viewer=url)
     repo = Path(__file__).resolve().parents[2]
     static = StaticFiles(
@@ -244,14 +247,35 @@ async def run(args) -> None:
     def process_request(connection, request):
         return static.response(request.path)
 
+    ssl_context = server_context(address) if args.tls else None
+
     async with serve(
-        hub.handle, args.host, args.port, max_size=None, process_request=process_request
+        hub.handle,
+        args.host,
+        args.port,
+        max_size=None,
+        process_request=process_request,
+        ssl=ssl_context,
     ):
-        log.info("=" * 60)
+        ws_scheme = "wss" if args.tls else "ws"
+        log.info("=" * 66)
         log.info("  viewer   %s", url)
-        log.info("  capture  %s   <- open this in the Quest browser", capture_url(args.port))
-        log.info("  godot    ws://%s:%d/ws", static_host(args.host, url), args.port)
-        log.info("=" * 60)
+        log.info("  capture  %s/capture/", url)
+        log.info("  godot    %s://%s:%d/ws", ws_scheme, address, args.port)
+        if args.tls:
+            log.info("")
+            log.info("  TLS is self-signed — the headset will warn once. Fingerprint")
+            log.info("  starts %s", fingerprint(address))
+        else:
+            # WebXR is gated on a secure context, so plain http to a LAN
+            # address gives the capture client no `navigator.xr` at all. Say so
+            # here rather than letting it surface as an unexplained failure.
+            log.info("")
+            log.info("  WebXR capture needs a secure context. Over plain http use USB:")
+            log.info("    adb reverse tcp:%d tcp:%d", args.port, args.port)
+            log.info("    then open http://localhost:%d/capture/ in the headset", args.port)
+            log.info("  Or restart with --tls to serve wirelessly over https.")
+        log.info("=" * 66)
         await asyncio.gather(hub.publish_loop(), hub.stats_loop())
 
 
@@ -271,6 +295,11 @@ def main() -> None:
         "--viewer",
         default=str(Path(__file__).resolve().parents[2] / "viewer-web"),
         help="directory served over HTTP on the same port",
+    )
+    p.add_argument(
+        "--tls",
+        action="store_true",
+        help="serve https/wss with a self-signed cert (needed for wireless WebXR)",
     )
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args()
