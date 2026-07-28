@@ -23,6 +23,41 @@ sees passthrough plus a small status panel.
 5. Point the app at your host: create `user://rq4d_host.txt` containing e.g.
    `ws://192.168.1.42:8787/ws`, or edit `DEFAULT_HOST` in `scripts/main.gd`.
 
+## Can this be built headlessly? Partly.
+
+The full toolchain assembles and works off-device — Godot 4.5 headless, export
+templates, Android SDK 35 with build-tools 35.0.0, JDK 17, the OpenXR vendors
+plugin, and the Android build template installed into `android/build`. All of
+it was verified in a container with no headset:
+
+```bash
+# Godot + templates
+~/.cache/rq4d/Godot_v4.5-stable_linux.x86_64 --version
+ls ~/.local/share/godot/export_templates/4.5.stable/android_source.zip
+
+# Android SDK — the template requires 35, not 34
+sdkmanager "platform-tools" "build-tools;35.0.0" "platforms;android-35"
+
+# JDK 17 specifically; Godot's Android export does not accept 21
+# OpenXR vendors plugin -> quest-app/addons/
+```
+
+**What does not work yet:** `--export-debug "Meta Quest"` stops at
+
+```
+ERROR: Cannot export project with preset "Meta Quest" due to configuration errors
+```
+
+and headless Godot prints no detail about *which* check failed. Ruled out so
+far: JDK version, SDK/build-tools level, the build template and its
+`.build_version` marker, the debug keystore, and signing (the same error
+appears unsigned). Exporting from the Godot editor GUI shows the specific
+error in the export dialog, which is the fastest way to find it — the
+information exists, it is just not printed headlessly.
+
+Until then the APK has to be produced from the editor. Everything else in this
+repo is buildable and testable without a headset.
+
 ## Build and deploy
 
 ```bash
