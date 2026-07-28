@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from rq4d_host.wire import DepthFrame, Pose
+from rq4d_host.wire import DepthFrame, Pose, PoseFrame
 
 DEFAULT_FOV = (-0.90, 0.90, 0.79, -0.79)  # radians, roughly Quest-like
 
@@ -199,6 +199,17 @@ class SyntheticQuest:
         self.rng = np.random.default_rng(seed)
         self.depth_scale = 1.0 / 4000.0
 
+    def pose_frame_at(self, t: float) -> PoseFrame:
+        """Head pose alone, streamed faster than depth.
+
+        Cheap and continuous, so the viewer can show where the wearer is even
+        between depth frames — which is the cue that explains why a region of
+        the room is or is not filling in.
+        """
+        pos, quat, _ = self.path.pose_at(t)
+        pose = Pose(pos, quat)
+        return PoseFrame(pose, [pose], [self.fov])
+
     def frame_at(self, t: float) -> tuple[DepthFrame, np.ndarray]:
         pos, quat, rot = self.path.pose_at(t)
         boxes = self.room.snapshot(t)
@@ -277,7 +288,12 @@ async def _stream(args) -> None:
 
                 await asyncio.sleep(next_at - now)
             next_at += interval
-            frame, _ = quest.frame_at(time.perf_counter() - t0)
+            elapsed = time.perf_counter() - t0
+            await ws.send(
+                encode(MsgType.POSE_FRAME, quest.pose_frame_at(elapsed).pack(),
+                       time.monotonic_ns())
+            )
+            frame, _ = quest.frame_at(elapsed)
             await ws.send(encode(MsgType.DEPTH_FRAME, frame.pack(), time.monotonic_ns()))
             sent += 1
             if sent % 30 == 0:
@@ -286,7 +302,7 @@ async def _stream(args) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Synthetic Quest depth streamer")
-    p.add_argument("--url", default="ws://127.0.0.1:8787")
+    p.add_argument("--url", default="ws://127.0.0.1:8787/ws")
     p.add_argument("--hz", type=float, default=15.0)
     p.add_argument("--width", type=int, default=160)
     p.add_argument("--height", type=int, default=160)

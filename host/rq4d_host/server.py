@@ -14,11 +14,13 @@ import contextlib
 import json
 import logging
 import time
+from pathlib import Path
 
 import websockets
 from websockets.asyncio.server import ServerConnection, serve
 
 from .pipeline import ClientState, PipelineConfig, Session
+from .static import StaticFiles, viewer_url
 from .volume import VolumeConfig
 from .wire import (
     PROTOCOL_VERSION,
@@ -34,11 +36,13 @@ log = logging.getLogger("rq4d")
 
 
 class Hub:
-    def __init__(self, session: Session, publish_hz: float = 20.0):
+    def __init__(self, session: Session, publish_hz: float = 20.0, viewer: str = ""):
         self.session = session
         self.viewers: dict[ServerConnection, ClientState] = {}
         self.producer: ServerConnection | None = None
         self.publish_interval = 1.0 / publish_hz
+        self.viewer_url = viewer
+        self._latest_pose: bytes | None = None
 
     # -- connection handling ------------------------------------------------
 
@@ -61,6 +65,12 @@ class Hub:
                     self.session.submit_depth(DepthFrame.unpack(frame.payload), frame.timestamp_ns)
                 elif frame.type == MsgType.POSE_FRAME:
                     self.session.submit_pose(PoseFrame.unpack(frame.payload))
+                    # Latched, not relayed from here. Awaiting a viewer send
+                    # inside the producer read loop couples ingestion to the
+                    # slowest viewer: a browser busy with a million triangles
+                    # stalls this loop, depth then arrives in bursts and
+                    # overflows the ingest slot. The publish loop forwards it.
+                    self._latest_pose = raw
                 elif frame.type == MsgType.CONTROL:
                     await self._control(frame.json(), peer)
                 elif frame.type == MsgType.HEARTBEAT:
@@ -98,6 +108,12 @@ class Hub:
                     "role": role,
                     "clock_ns": time.monotonic_ns(),
                     "accepted": True,
+                    # The headset displays this so the address can be read off
+                    # the lenses. It is the host's own LAN address, not
+                    # whatever the headset happened to connect through — over
+                    # `adb reverse` the headset only knows 127.0.0.1, which is
+                    # useless to type into a browser on another machine.
+                    "viewer_url": self.viewer_url,
                 },
                 time.monotonic_ns(),
             )
@@ -124,6 +140,7 @@ class Hub:
         await self._send_all(msg)
         for state in self.viewers.values():
             state.sent.clear()
+            state.keyframe_queue.clear()
             state.needs_keyframe = True
 
     async def _send_all(self, payload: bytes) -> None:
@@ -148,10 +165,23 @@ class Hub:
             await asyncio.sleep(self.publish_interval)
             chunks = self.session.drain_chunks()
 
+            # Newest pose only. Pose is cheap and continuous, so a viewer that
+            # fell behind wants the current one, never a backlog of old ones.
+            pose, self._latest_pose = self._latest_pose, None
+            if pose is not None:
+                await self._send_all(pose)
+
             for ws, state in list(self.viewers.items()):
                 try:
-                    if state.needs_keyframe:
-                        for chunk in self.session.keyframe_chunks(state):
+                    if self.session.keyframe_pending(state):
+                        # Meshing blocks; on the event loop it delays the
+                        # reader, incoming depth then arrives in bursts and
+                        # overflows the ingest slot. Catching up a late viewer
+                        # must not cost the live stream frames.
+                        catchup = await asyncio.to_thread(
+                            self.session.keyframe_chunks, state, 8
+                        )
+                        for chunk in catchup:
                             await ws.send(
                                 encode(
                                     MsgType.MESH_CHUNK_UPDATE,
@@ -199,11 +229,26 @@ async def run(args) -> None:
 
     session = Session(cfg)
     session.start()
-    hub = Hub(session, publish_hz=args.publish_hz)
 
-    async with serve(hub.handle, args.host, args.port, max_size=None):
-        log.info("listening on ws://%s:%d", args.host, args.port)
+    url = viewer_url(args.port)
+    hub = Hub(session, publish_hz=args.publish_hz, viewer=url)
+    static = StaticFiles(Path(args.viewer).resolve())
+
+    def process_request(connection, request):
+        return static.response(request.path)
+
+    async with serve(
+        hub.handle, args.host, args.port, max_size=None, process_request=process_request
+    ):
+        log.info("=" * 52)
+        log.info("  viewer   %s", url)
+        log.info("  headset  ws://%s:%d/ws", static_host(args.host, url), args.port)
+        log.info("=" * 52)
         await asyncio.gather(hub.publish_loop(), hub.stats_loop())
+
+
+def static_host(bind: str, url: str) -> str:
+    return url.split("//", 1)[1].split(":", 1)[0] if bind in ("0.0.0.0", "::") else bind
 
 
 def main() -> None:
@@ -214,6 +259,11 @@ def main() -> None:
     p.add_argument("--chunk", type=int, default=32)
     p.add_argument("--budget", type=float, default=8.0)
     p.add_argument("--publish-hz", type=float, default=20.0)
+    p.add_argument(
+        "--viewer",
+        default=str(Path(__file__).resolve().parents[2] / "viewer-web"),
+        help="directory served over HTTP on the same port",
+    )
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args()
 

@@ -94,6 +94,7 @@ class ClientState:
     ident: str
     sent: dict[ChunkKey, int] = field(default_factory=dict)
     needs_keyframe: bool = True
+    keyframe_queue: list[ChunkKey] = field(default_factory=list)
 
 
 class Session:
@@ -210,20 +211,43 @@ class Session:
                 break
         return out
 
-    def keyframe_chunks(self, client: ClientState) -> list[MeshChunk]:
-        """Everything a freshly connected viewer needs to catch up.
+    def keyframe_chunks(self, client: ClientState, budget: int = 12) -> list[MeshChunk]:
+        """A slice of what a freshly connected viewer needs to catch up.
+
+        Deliberately budgeted. Meshing a whole room in one call takes seconds,
+        and since the publisher runs on the event loop that stalls every other
+        connection with it — measured as 233 depth frames dropped by
+        backpressure when a single viewer connected. Catching up a late joiner
+        must not cost the live stream anything.
 
         Re-meshed on demand rather than cached: the volume is the source of
         truth, and a cache of encoded chunks would be one more thing to keep
         coherent with it for no measurable gain at room scale.
         """
+        if client.needs_keyframe:
+            # Nearest chunks first, so the region the wearer is in appears
+            # while the far corners are still arriving.
+            camera = self.camera_position()
+            extent = self.volume.cfg.chunk_extent
+            client.keyframe_queue = sorted(
+                self.volume.chunks.keys(),
+                key=lambda k: float(
+                    np.linalg.norm((np.array(k, np.float32) + 0.5) * extent - camera)
+                ),
+            )
+            client.needs_keyframe = False
+
         out = []
-        for key in list(self.volume.chunks.keys()):
-            chunk = self.mesher._mesh_one(key, time.monotonic_ns())
+        now = time.monotonic_ns()
+        while client.keyframe_queue and len(out) < budget:
+            key = client.keyframe_queue.pop(0)
+            chunk = self.mesher._mesh_one(key, now)
             if chunk is not None:
                 out.append(chunk)
-        client.needs_keyframe = False
         return out
+
+    def keyframe_pending(self, client: ClientState) -> bool:
+        return client.needs_keyframe or bool(client.keyframe_queue)
 
     def backlog(self) -> int:
         return self.mesher.stats_backlog

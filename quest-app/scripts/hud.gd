@@ -22,6 +22,7 @@ var _fatal := ""
 var _paused := false
 var _link_up := false
 var _link_url := ""
+var _viewer_url := ""
 
 
 func _ready() -> void:
@@ -43,6 +44,13 @@ func set_paused(paused: bool) -> void:
 func set_link(up: bool, url: String) -> void:
 	_link_up = up
 	_link_url = url
+
+
+## Shown large and on its own line: this is the address a person reads off the
+## lenses and types into a browser, so it has to survive being looked at
+## through passthrough while wearing the thing.
+func set_viewer_url(url: String) -> void:
+	_viewer_url = url
 
 
 func set_calibration(_state: int, message: String) -> void:
@@ -68,6 +76,11 @@ func update_status(net_status: Dictionary, depth_status: Dictionary, streaming: 
 	lines.append("%s" % _calibration_message)
 	if _progress > 0.0 and _progress < 1.0:
 		lines.append("%s %s" % [_bar(_progress), _hint])
+
+	if _viewer_url != "":
+		lines.append("")
+		lines.append("   open on any device:")
+		lines.append("   %s" % _viewer_url)
 
 	lines.append("")
 	lines.append("host    %s" % ("connected" if _link_up else "connecting…"))

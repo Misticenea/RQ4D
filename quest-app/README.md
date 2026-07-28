@@ -21,7 +21,7 @@ sees passthrough plus a small status panel.
    builds, which the Meta extensions require).
 4. Editor → Manage Export Templates, install templates for your Godot version.
 5. Point the app at your host: create `user://rq4d_host.txt` containing e.g.
-   `ws://192.168.1.42:8787`, or edit `DEFAULT_HOST` in `scripts/main.gd`.
+   `ws://192.168.1.42:8787/ws`, or edit `DEFAULT_HOST` in `scripts/main.gd`.
 
 ## Build and deploy
 
@@ -37,7 +37,7 @@ adb reverse tcp:8787 tcp:8787
 adb logcat -s godot
 ```
 
-With `adb reverse` active, set the host URL to `ws://127.0.0.1:8787`.
+With `adb reverse` active, set the host URL to `ws://127.0.0.1:8787/ws`.
 
 ## What to measure first
 

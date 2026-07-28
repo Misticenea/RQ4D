@@ -21,7 +21,7 @@ extends Node3D
 
 const POSE_HZ := 30.0
 const HOST_URL_FILE := "user://rq4d_host.txt"
-const DEFAULT_HOST := "ws://192.168.1.10:8787"
+const DEFAULT_HOST := "ws://192.168.1.10:8787/ws"
 
 var _xr: XRInterface = null
 var _streaming := false
@@ -44,6 +44,7 @@ func _ready() -> void:
 	net.connected.connect(_on_connected)
 	net.disconnected.connect(func(): hud.set_link(false, ""))
 	net.control_received.connect(_on_control)
+	net.viewer_url_received.connect(hud.set_viewer_url)
 	net.start(_load_host_url())
 
 	if not depth.setup(xr_origin, xr_camera):

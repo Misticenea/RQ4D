@@ -15,6 +15,7 @@ extends Node
 signal connected()
 signal disconnected()
 signal control_received(command: Dictionary)
+signal viewer_url_received(url: String)
 
 const MAX_DEPTH_QUEUE := 2
 const MAX_POSE_QUEUE := 4
@@ -23,6 +24,7 @@ const RECONNECT_DELAY_S := 2.0
 @export var url: String = "ws://192.168.1.10:8787"
 @export var auto_reconnect: bool = true
 
+var viewer_url: String = ""
 var bytes_sent: int = 0
 var frames_dropped: int = 0
 var is_connected: bool = false
@@ -111,8 +113,18 @@ func _drain_incoming() -> void:
 		var frame := Wire.decode(_socket.get_packet())
 		if frame.is_empty():
 			continue
-		if frame["type"] == Wire.Msg.CONTROL:
-			control_received.emit(Wire.decode_json(frame))
+		match frame["type"]:
+			Wire.Msg.CONTROL:
+				control_received.emit(Wire.decode_json(frame))
+			Wire.Msg.HELLO_ACK:
+				# The host reports its own LAN address rather than the one we
+				# connected through. Over `adb reverse` we only know
+				# 127.0.0.1, which nobody can type into a browser elsewhere.
+				var ack := Wire.decode_json(frame)
+				var url := str(ack.get("viewer_url", ""))
+				if url != "" and url != viewer_url:
+					viewer_url = url
+					viewer_url_received.emit(url)
 
 
 func _flush() -> void:
