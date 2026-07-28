@@ -40,12 +40,13 @@ Every message is a length-prefixed frame:
 `flags` bit 0 = payload is zstd-compressed. Bit 1 = keyframe/full-state (as
 opposed to delta). Bits 2–7 reserved.
 
-Payloads are **FlatBuffers** tables for structured messages and **raw blobs**
-for bulk pixel data. FlatBuffers over Protobuf because the host and viewer both
-want zero-copy access to large vertex arrays, and the JS decoder is dependency-free.
+Payloads are **fixed-layout binary** for the hot path and **JSON** for control
+messages. Bulk arrays (depth blobs, vertex/index buffers) are opaque byte ranges
+the receiver wraps in a numpy or typed-array view with no parse step.
 
-Schema lives in `protocol/rq4d.fbs` and is the single source of truth. C#, Python,
-and TypeScript bindings are generated at build time — never hand-written.
+`host/rq4d_host/wire.py` is the reference implementation and the source of truth
+for byte offsets; see [DECISIONS.md ADR-007](DECISIONS.md#adr-007-fixed-layout-binary-framing-json-for-control)
+for why this replaced the FlatBuffers plan.
 
 ## Message types
 
@@ -108,7 +109,7 @@ reconstruction backend** — host-side TSDF, on-device fusion, a recorded replay
 
 ```
 MeshChunkUpdate {
-  key           { x, y, z: i32 }   // chunk coords, 1.28 m cubes
+  key           { x, y, z: i32 }   // chunk coords, 0.64 m cubes
   lod           u8
   version       u32               // monotonic per chunk
   updated_at    u64
@@ -120,11 +121,15 @@ MeshChunkUpdate {
 }
 ```
 
-Chunk size 1.28 m = 64³ voxels at 2 cm. Big enough that per-chunk overhead is
-negligible, small enough that a local change doesn't retransmit the room.
+Chunk size 0.64 m = 32³ voxels at 2 cm. The earlier 1.28 m figure was reduced
+after measuring the mesher: smaller chunks mean less work per dirty chunk and
+finer dirty-tracking, which matters more for responsiveness than the per-chunk
+message overhead it costs. `chunk_voxels` must be a power of two — the voxel
+key packing relies on it.
 
-Position quantization: u16 within the chunk AABB gives 1.28 m / 65536 ≈ 0.02 mm.
-Vastly finer than the sensor, so quantization is free accuracy-wise.
+Positions are float32 in chunk-local space for v1. Quantisation to u16 (0.64 m /
+65536 ≈ 0.01 mm, far finer than the sensor) is an M4 bandwidth optimisation; the
+`vertex_encoding` byte exists so it can land without a protocol break.
 
 ### `Control`
 

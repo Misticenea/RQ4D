@@ -141,15 +141,60 @@ a live constraint until multi-room.
 
 ---
 
-## ADR-007: FlatBuffers for the schema
+## ADR-007: Fixed-layout binary framing, JSON for control
 
-**Decision:** `protocol/rq4d.fbs` is the single source of truth; C#, Python, and
-TypeScript bindings are generated.
+**Superseded:** an earlier draft of this ADR chose FlatBuffers.
 
-**Why:** zero-copy access to large vertex and index arrays on both the host and
-the viewer, a dependency-free JS decoder, and no hand-written serialization to
-drift out of sync across three languages. Protobuf would require a full parse of
-every mesh payload — measurable cost on the hot path.
+**Decision:** a fixed 16-byte header plus fixed-layout binary payloads for the
+hot path (`PoseFrame`, `DepthFrame`, `MeshChunkUpdate`); JSON payloads for
+control messages. Implemented in `host/rq4d_host/wire.py`, which is the
+reference for all other languages.
+
+**Why the change:** the bulk payloads — depth blobs, vertex and index arrays —
+are opaque byte ranges. FlatBuffers adds a schema and a codegen step without
+changing how those bytes are read: in both designs the receiver ends up
+wrapping a numpy or typed-array view over an offset. The structured parts are
+small and fixed-size, so a struct layout describes them completely.
+
+What that buys: no `flatc` in the build, no generated sources to keep in sync,
+and a codec that is a couple of hundred readable lines. Control messages stay
+JSON because they are rare, small, and much easier to debug by eye.
+
+**Cost accepted:** the layout is hand-maintained across C#, Python and
+TypeScript. Mitigated by keeping every struct in one file per language with the
+byte offsets stated, and by the `Hello` version check refusing mismatches
+outright rather than misparsing them.
+
+---
+
+## ADR-008: Carving is projective, integration is ray-based
+
+**Decision:** surface integration unprojects depth pixels and writes a band
+around each measured point. Carving does the opposite — it projects
+currently-solid voxels into the depth image and erases the ones the camera can
+now see through.
+
+**Why they differ:** the two operations need density in different spaces.
+Integration needs to be dense on the *surface*, and depth pixels are already
+distributed exactly there. Carving needs to be dense in *voxel* space, and
+rays diverge — at 1.25 m a 6-pixel stride puts neighbouring samples six voxels
+apart, so most voxels are never touched no matter how many samples are thrown
+down the rays.
+
+This was not a prediction. The first implementation carved by marching along
+rays; an isolated test — fixed camera, object removed — measured **zero** hits
+on a given ghost voxel over eight frames, and a ghost that survived 100%
+intact. Inverting the loop for the carve pass made the same test pass, and the
+same object now clears to a ~25% residual in the full benchmark, that residual
+being the underside resting on the floor, which no camera position can observe.
+
+**Cost accepted:** the carve pass costs reconstructed surface area rather than
+swept volume, and needs a chunk-level frustum cull to stay affordable —
+without it, 500 chunks x 32768 voxels per frame measured 94 ms and dropped the
+achieved rate from 15 Hz to 8.
+
+**Kept honest by:** `host/tests/test_carving.py`, which asserts both directions
+— a removed object disappears, and a stationary one does not erode.
 
 ---
 
